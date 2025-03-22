@@ -1,47 +1,72 @@
-import React, { useState } from 'react';
-import { View, Button, Alert, StyleSheet, Text } from 'react-native';
+import React, { useState, useEffect } from 'react';
+import { View, Button, StyleSheet } from 'react-native';
 import { Audio } from 'expo-av';
 import { useNavigation } from '@react-navigation/native';
+import { useFocusEffect } from '@react-navigation/native';
 import Slider from '@react-native-community/slider';
 import Ionicons from 'react-native-vector-icons/Ionicons'; // Import Volume Icon
 
 const AudioScreen = () => {
-  const [sound, setSound] = useState();
-  const [volume, setVolume] = useState(1.0); // Volume ranges from 0.0 to 1.0
+  const [sound, setSound] = useState(null);
+  const [isPlaying, setIsPlaying] = useState(false);
+  const [volume, setVolume] = useState(1.0);
   const navigation = useNavigation();
 
-  const playSound = async () => {
-    Alert.alert(
-      "Permission to Play Sound",
-      "Do you want to allow this app to play the sound?",
-      [
-        {
-          text: "No",
-          onPress: () => console.log("Permission denied"),
-          style: "cancel",
-        },
-        {
-          text: "Yes",
-          onPress: async () => {
-            const { sound } = await Audio.Sound.createAsync(
-              require('../assets/Hello.mp3')
-            );
-            setSound(sound);
-            await sound.setVolumeAsync(volume);
-            await sound.playAsync();
-          },
-        },
-      ]
-    );
+  // Load and play sound when screen is focused
+  useEffect(() => {
+    const loadSound = async () => {
+      const { sound } = await Audio.Sound.createAsync(
+        require('../assets/Hello.mp3')
+      );
+      setSound(sound);
+      await sound.setVolumeAsync(volume);
+    };
+
+    loadSound();
+
+    return () => {
+      if (sound) {
+        sound.stopAsync();
+        sound.unloadAsync();
+      }
+    };
+  }, []);
+
+  // Stop audio when leaving the screen
+  useFocusEffect(
+    React.useCallback(() => {
+      return () => {
+        if (sound) {
+          sound.stopAsync();
+          sound.unloadAsync();
+          setIsPlaying(false);
+        }
+      };
+    }, [sound])
+  );
+
+  // Toggle Play / Pause
+  const togglePlayPause = async () => {
+    if (!sound) return;
+
+    if (isPlaying) {
+      await sound.pauseAsync();
+    } else {
+      await sound.playAsync();
+    }
+    setIsPlaying(!isPlaying);
   };
 
+  // Stop and Reset Audio
   const stopAndResetAudio = async () => {
     if (sound) {
-      await sound.pauseAsync();
+      await sound.stopAsync();
       await sound.setPositionAsync(0);
+      setIsPlaying(false);
     }
   };
 
+  // Adjust Volume
   const adjustVolume = async (value) => {
     setVolume(value);
     if (sound) {
@@ -49,11 +74,24 @@ const AudioScreen = () => {
     }
   };
 
+  // Handle navigation (stops sound when exiting)
+  const handleExit = () => {
+    if (sound) {
+      sound.stopAsync();
+      sound.unloadAsync();
+      setIsPlaying(false);
+    }
+    navigation.navigate('Home');
+  };
+
   return (
     <View style={styles.container}>
-      {/* Play Sound Button */}
+      {/* Play / Pause Button */}
       <View style={styles.buttonContainer}>
-        <Button title="Play Sound" onPress={playSound} />
+        <Button
+          title={isPlaying ? 'Pause Sound' : 'Play Sound'}
+          onPress={togglePlayPause}
+        />
       </View>
 
       {/* Stop and Reset Button */}
@@ -61,9 +99,9 @@ const AudioScreen = () => {
         <Button title="Stop and Reset" onPress={stopAndResetAudio} />
       </View>
 
-      {/* Back Button */}
+      {/* Back Button (Stops Sound on Exit) */}
       <View style={styles.buttonContainer}>
-        <Button title="Back to Home" onPress={() => navigation.navigate('Home')} />
+        <Button title="Back to Home" onPress={handleExit} />
       </View>
 
       {/* Volume Slider with Icon */}
